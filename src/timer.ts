@@ -19,3 +19,8 @@ export function getTimeout(chainId: number): number {
 export function __setTimeoutConfig(chainId: number, time: number) {
   TIMEOUT[chainId] = time;
 }
+
+export function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+

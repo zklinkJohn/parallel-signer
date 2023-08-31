@@ -8,7 +8,7 @@ import {
   keccak256,
   TransactionRequest,
 } from "ethers";
-import { __setTimeoutConfig, getTimeout } from "./timer";
+import { __setTimeoutConfig, getTimeout, sleep } from "./timer";
 
 // Description of the Request table in the database
 export interface Request {
@@ -71,6 +71,10 @@ export abstract class IOrderedRequestStore {
   ): Promise<PackedTransaction | null>;
 
   abstract setPackedTransactionConfirmation(id: number, confirmation: number);
+
+  abstract getUncheckedConfirmationsByChainId(
+    chainId: number
+  ): Promise<PackedTransaction[]>;
 }
 
 export interface ParallelSignerOptions {
@@ -203,6 +207,9 @@ export class ParallelSigner extends Wallet {
         this.loggerError(err);
       }
     }, intervalTime * 1000);
+
+    // start handle unchecked confirmations
+    this.handleUncheckedConfirmations();
   }
 
   private timeHandler = [];
@@ -564,7 +571,8 @@ export class ParallelSigner extends Wallet {
             });
           }
 
-          if ((await txRcpt.confirmations()) >= this.options.confirmations) {
+          const txConfirmations = await txRcpt.confirmations();
+          if (txConfirmations >= this.options.confirmations) {
             // Set request txid by v.txhash
             await this.requestStore.updateRequestBatch(
               v.requestIds,
@@ -576,7 +584,7 @@ export class ParallelSigner extends Wallet {
           // Update confirmation to db
           await this.requestStore.setPackedTransactionConfirmation(
             v.id ?? 0,
-            await txRcpt.confirmations()
+            txConfirmations
           );
           // There can be at most one packedTx with data on the chain
           break;
@@ -588,6 +596,26 @@ export class ParallelSigner extends Wallet {
     }
 
     return result;
+  }
+
+  // batch handle confirmations not updated in the database due to errors
+  async handleUncheckedConfirmations(): Promise<void> {
+    const packedTxs =
+      await this.requestStore.getUncheckedConfirmationsByChainId(
+        this.getChainId()
+      );
+    if (packedTxs.length) {
+      for (const packedTx of packedTxs) {
+        try {
+          await this.checkConfirmations(packedTx.nonce);
+        } catch (error) {
+          this.loggerError("handleUncheckedConfirmations error:", error);
+        }
+      }
+    }
+
+    await sleep(this.options.checkPackedTransactionIntervalSecond * 5 * 1000);
+    await this.handleUncheckedConfirmations();
   }
 
   /**
