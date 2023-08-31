@@ -75,6 +75,10 @@ export abstract class IOrderedRequestStore {
   abstract getUncheckedConfirmationsByChainId(
     chainId: number
   ): Promise<PackedTransaction[]>;
+
+  abstract getPackedTransactionsByRequestId(
+    requestIds: string
+  ): Promise<PackedTransaction[]>;
 }
 
 export interface ParallelSignerOptions {
@@ -608,6 +612,14 @@ export class ParallelSigner extends Wallet {
     if (packedTxs.length) {
       for (const packedTx of packedTxs) {
         try {
+          const confirmedRequests =
+            await this.requestStore.getPackedTransactionsByRequestId(
+              packedTx.requestIds.join(",")
+            );
+          // requestIds has alerady been resend,this txid abandoned
+          if (confirmedRequests.length) {
+            continue;
+          }
           await this.checkConfirmations(packedTx.nonce);
         } catch (error) {
           this.loggerError("handleUncheckedConfirmations error:", error);
