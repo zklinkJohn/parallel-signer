@@ -600,6 +600,7 @@ export class ParallelSigner extends Wallet {
 
   // batch handle confirmations not updated in the database due to errors
   async handleUncheckedConfirmations(): Promise<void> {
+    this.logger("handleUncheckedConfirmations start", this.getChainId());
     const packedTxs =
       await this.requestStore.getUncheckedConfirmationsByChainId(
         this.getChainId()
